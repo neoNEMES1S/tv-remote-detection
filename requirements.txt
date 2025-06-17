@@ -1,0 +1,21 @@
+# Core dependencies for TV Remote Detection System
+numpy>=1.21.0
+opencv-python>=4.6.0
+torch>=1.8.0
+torchvision>=0.9.0
+flask>=2.0.0
+pandas>=1.1.4
+
+# Additional dependencies that may be required
+ultralytics>=8.0.0
+Pillow>=8.0.0
+requests>=2.25.0
+PyYAML>=5.4.0
+
+# Optional but recommended for better performance
+scipy>=1.7.0
+matplotlib>=3.3.0
+
+# For Python 3.11 compatibility
+setuptools>=65.0.0
+wheel>=0.38.0

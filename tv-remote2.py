@@ -35,17 +35,17 @@ class Config:
     
     # AI Model settings
     YOLO_MODEL: str = 'yolov5n'
-    CONFIDENCE_THRESHOLD: float = 0.3
+    CONFIDENCE_THRESHOLD: float = 0.25  # Lowered for better remote detection
     PROCESSING_RESOLUTION: Tuple[int, int] = (416, 416)
     
-    # Remote detection settings
+    # Remote detection settings - simplified
     REMOTE_KEYWORDS: List[str] = ['remote', 'cell phone', 'remote control']
-    PERSON_REMOTE_DISTANCE_THRESHOLD: int = 100
+    PERSON_REMOTE_DISTANCE_THRESHOLD: int = 150  # Increased for easier detection
     
     # Hands-up detection settings
-    HANDS_UP_THRESHOLD: float = 0.7  # Confidence threshold for hands-up detection
-    HANDS_UP_DURATION_THRESHOLD: int = 3  # Seconds to confirm hands-up situation
-    WRIST_SHOULDER_RATIO: float = -0.1  # Wrist should be above shoulder (negative Y difference)
+    HANDS_UP_THRESHOLD: float = 0.7
+    HANDS_UP_DURATION_THRESHOLD: int = 3
+    WRIST_SHOULDER_RATIO: float = -0.1
     
     # Motion sensitivity
     MOTION_THRESHOLD: int = 800
@@ -396,7 +396,7 @@ class EnhancedDetector:
         return result
     
     def _analyze_remote_pickup(self, frame, detections, motion_detected, motion_score) -> Dict[str, Any]:
-        """Analyze if pickup is occurring"""
+        """Analyze if remote pickup is occurring - simplified for immediate detection"""
         
         result = {
             'person_detected': False,
@@ -428,33 +428,40 @@ class EnhancedDetector:
             remote_bbox = [int(remote['xmin']), int(remote['ymin']), 
                           int(remote['xmax']), int(remote['ymax'])]
         
-        # Check for pickup
+        # Simplified pickup detection - if person and remote detected together, flag immediately
         if result['person_detected'] and result['remote_detected']:
             person_center = self._get_bbox_center(person_bbox)
             remote_center = self._get_bbox_center(remote_bbox)
             distance = self._calculate_distance(person_center, remote_center)
             result['distance_to_remote'] = distance
             
-            # Simple pickup logic
+            # Immediate detection logic - much simpler
             confidence = 0.0
             reasons = []
             
-            if distance < self.config.PERSON_REMOTE_DISTANCE_THRESHOLD:
-                confidence += 0.4
-                reasons.append(f"Close proximity ({distance:.0f}px)")
+            # If remote and person are detected in same frame, assume pickup
+            if distance < self.config.PERSON_REMOTE_DISTANCE_THRESHOLD * 2:  # Doubled threshold for easier detection
+                confidence = 0.8  # High confidence immediately
+                reasons.append(f"Person with remote detected ({distance:.0f}px)")
+                
+                # Check if remote is in upper body area (likely in hand)
+                person_height = person_bbox[3] - person_bbox[1]
+                person_upper_body = person_bbox[1] + (person_height * 0.6)  # Upper 60% of person
+                
+                if remote_center[1] < person_upper_body:
+                    confidence = 0.9
+                    reasons.append("Remote in hand/upper body area")
+                
+                # Bonus for motion (but not required)
+                if motion_detected:
+                    confidence = min(confidence + 0.1, 1.0)
+                    reasons.append("Motion detected")
             
-            if motion_detected:
-                confidence += 0.3 if motion_score > self.config.PICKUP_MOTION_THRESHOLD else 0.15
-                reasons.append(f"Motion detected ({motion_score:.0f})")
+            result['pickup_confidence'] = confidence
+            result['pickup_reason'] = "; ".join(reasons) if reasons else "Person and remote detected"
             
-            if remote_center[1] > person_bbox[1] + (person_bbox[3] - person_bbox[1]) * 0.3:
-                confidence += 0.2
-                reasons.append("Remote in hand area")
-            
-            result['pickup_confidence'] = min(confidence, 1.0)
-            result['pickup_reason'] = "; ".join(reasons) if reasons else "No pickup indicators"
-            
-            if confidence > 0.6:
+            # Flag pickup if confidence > 0.5 (much lower threshold)
+            if confidence > 0.5:
                 result['pickup_detected'] = True
                 self._record_pickup_event(result)
         
@@ -603,14 +610,14 @@ class EnhancedDetector:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
                 y_offset += 30
             
-            # Remote pickup alert
+            # Remote pickup alert - immediate detection
             if result.get('pickup_detected', False):
-                cv2.putText(annotated_frame, "REMOTE PICKUP DETECTED!", (10, y_offset),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-                y_offset += 30
+                cv2.putText(annotated_frame, "📺 REMOTE IN HAND!", (10, y_offset),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)
+                y_offset += 35
             elif result.get('person_detected', False) and result.get('remote_detected', False):
-                cv2.putText(annotated_frame, "MONITORING REMOTE...", (10, y_offset),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                cv2.putText(annotated_frame, "👀 PERSON + REMOTE DETECTED", (10, y_offset),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                 y_offset += 25
             
             # Motion indicator
@@ -961,12 +968,12 @@ HTML_TEMPLATE = """
                         }
                         lastHandsUpAlert = true;
                     } else if (data.pickup_detected) {
-                        alertBanner.textContent = '📺 TV Remote Pickup Detected';
-                        alertBanner.className = 'alert-banner monitoring';
+                        alertBanner.textContent = '📺 Remote in Hand Detected!';
+                        alertBanner.className = 'alert-banner';
                         alertBanner.style.display = 'block';
                         lastHandsUpAlert = false;
-                    } else if (data.person_detected && (data.remote_detected || data.pose_detected)) {
-                        alertBanner.textContent = '👀 Monitoring Activity...';
+                    } else if (data.person_detected && data.remote_detected) {
+                        alertBanner.textContent = '👀 Person + Remote Detected';
                         alertBanner.className = 'alert-banner monitoring';
                         alertBanner.style.display = 'block';
                         lastHandsUpAlert = false;
